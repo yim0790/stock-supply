@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+update_log.txt
+setup_log.txt
+cache/
+docs/
+~$*
+.~lock.*
+*.tmp
+Thumbs.db
+desktop.ini
+config.cmd
+목업/
+icons/*.zip

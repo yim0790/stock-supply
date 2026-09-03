@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<!-- 판매/재고/수급 현황 PWA — PC 화면. data/data.json 을 읽어 품명별 일별 판매·재고와 수급(생산/수입) 일정을 보여준다 -->
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>판매/재고/수급 현황 (수량)</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#465CE2">
+<link rel="icon" type="image/png" sizes="32x32" href="icons/favicon-32.png">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon-180.png">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
+<style>
+/* applemood 토큰 + 표 헤더는 기준 블루 #465CE2 */
+:root{--ink:#1D1D1F;--g2:#6E6E73;--g3:#86868B;--bg:#FFFFFF;--pch:#F5F5F7;--hair:#E0E0E0;--blue:#0066CC;--red:#E30000;--th:#465CE2;--inner:#7F7F7F}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:13px;font-weight:400;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1600px;margin:0 auto;padding:30px 40px 50px}
+h1{font-size:28px;font-weight:600;margin:0 0 6px;letter-spacing:-0.015em}
+h1 .u{font-weight:400;color:var(--g2)}
+.sub{color:var(--g2);font-size:13px;margin-bottom:18px}
+.sub b{color:var(--ink);font-weight:600}
+.bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:12px 16px;border-radius:18px;background:var(--pch);margin-bottom:8px}
+.bar .lb{font-weight:600;min-width:36px}
+select,input[type=text]{height:34px;border:1px solid var(--hair);border-radius:8px;padding:0 10px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink)}
+select{min-width:130px}
+input[type=text]{width:230px}
+select:focus,input[type=text]:focus{outline:2px solid var(--blue);outline-offset:-1px;border-color:var(--blue)}
+button{height:34px;border:1px solid var(--hair);border-radius:8px;padding:0 16px;font-size:13px;font-family:inherit;background:#fff;color:var(--ink);cursor:pointer}
+button.p{background:var(--blue);color:#fff;border-color:var(--blue);font-weight:600}
+button:hover{border-color:var(--g3)}
+button.p:hover{background:#0055AA;border-color:#0055AA}
+.seg{display:inline-flex;background:#fff;border:1px solid var(--hair);border-radius:8px;padding:2px}
+.seg button{border:0;border-radius:6px;background:transparent;color:var(--g2);font-weight:600;padding:0 22px;height:28px}
+.seg button.on{background:var(--ink);color:#fff}
+.right{margin-left:auto}
+.cnt{color:var(--g3);font-size:12px;margin:10px 2px 8px;display:flex;gap:16px;flex-wrap:wrap}
+#off{display:none;background:var(--pch);border:1px solid var(--hair);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--g2);margin-bottom:10px}
+/* 표 (graymood + 블루 헤더) */
+.tblwrap{overflow:auto;max-height:calc(100vh - 230px);border:1.5px solid var(--ink)}
+table{border-collapse:separate;border-spacing:0;width:max-content;min-width:100%}
+th,td{border-bottom:1px solid var(--inner);border-right:1px solid var(--inner);padding:0 10px;height:32px;white-space:nowrap;text-align:right;font-variant-numeric:tabular-nums;font-size:13px}
+th{position:sticky;top:0;background:var(--th);color:#fff;font-weight:600;text-align:center;z-index:3}
+th.dim,td.dim{text-align:left}
+td.dim{background:#fff}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:#FAFAFA}
+td.tot,th.tot{font-weight:600}
+td.tot{background:var(--pch)}
+td.cur{font-weight:600}
+td.turn{color:var(--g2)}
+td.turn.low,td.turn.zero{color:var(--red);font-weight:600}
+td.clk{cursor:pointer}
+td.clk:hover{outline:2px solid var(--blue);outline-offset:-2px}
+td.in{color:var(--red);font-weight:700}
+td.out{background:var(--pch);color:#B0B0B5}
+td.z{color:#C7C7CC}
+td.na{color:#D6D6DB}
+.stk{position:sticky;background:#fff;z-index:2}
+th.stk{z-index:4}
+.c1,.c2,.c3,.c4,.c5{overflow:hidden;text-overflow:ellipsis}
+.c1{left:0;width:80px;min-width:80px;max-width:80px}
+.c2{left:80px;width:90px;min-width:90px;max-width:90px}
+.c3{left:170px;width:130px;min-width:130px;max-width:130px}
+.c4{left:300px;width:160px;min-width:160px;max-width:160px}
+.c5{left:460px;width:56px;min-width:56px;max-width:56px;text-align:center!important}
+td.c5,th.c5{border-right:1.5px solid var(--ink)}
+td.c5 a{color:var(--blue);font-weight:600;cursor:pointer}
+td.c5 a:hover{text-decoration:underline}
+td.c4 b{font-weight:600}
+.legend{margin-top:12px;font-size:12px;color:var(--g3);line-height:1.8}
+.legend b{color:var(--ink);font-weight:600}
+/* 팝업 */
+#dim{position:fixed;inset:0;background:rgba(29,29,31,.4);display:none;align-items:center;justify-content:center;z-index:50}
+#pop{background:#fff;border:1px solid var(--hair);border-radius:18px;min-width:460px;max-width:92vw;max-height:80vh;overflow:auto}
+#pop .hd{padding:20px 24px 12px;font-weight:600;font-size:17px;letter-spacing:-0.015em;display:flex;align-items:center}
+#pop .hd .x{margin-left:auto;cursor:pointer;font-weight:400;color:var(--g3);font-size:16px}
+#pop .bd{padding:0 24px 22px}
+#pop table{width:100%;border:1.5px solid var(--ink)}
+#pop th{position:static;background:var(--th);color:#fff}
+#pop td.l,#pop th.l{text-align:left}
+#pop tr.sum td{font-weight:600;background:var(--pch)}
+#pop tr.past td{color:#B0B0B5}
+.tag{display:inline-block;padding:2px 8px;border-radius:8px;font-size:12px;font-weight:600;background:var(--pch);border:1px solid var(--hair)}
+.tag.imp{color:var(--blue);border-color:var(--blue)}
+.ex{color:var(--g3);font-size:12px;margin-top:12px;line-height:1.7}
+.empty{color:var(--g3);padding:24px;text-align:center}
+@media (max-width:900px){.wrap{padding:16px 12px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>판매/재고/수급 현황 <span class="u">(수량)</span></h1>
+<div class="sub" id="sub">데이터 불러오는 중…</div>
+<div id="off"></div>
+
+<div class="bar">
+  <span class="lb">유형</span>
+  <select id="fL"><option value="">대유형 전체</option></select>
+  <select id="fM"><option value="">중유형 전체</option></select>
+  <select id="fS"><option value="">소유형 전체</option></select>
+  <input type="text" id="fQ" placeholder="품명 (부분일치)">
+  <button class="p" onclick="render()">검색</button>
+  <button onclick="resetF()">초기화</button>
+</div>
+<div class="bar">
+  <span class="lb">기간</span>
+  <select id="fYM"></select>
+  <span class="lb" style="margin-left:14px">VIEW</span>
+  <div class="seg"><button id="vS" class="on" onclick="setView('sales')">판매</button><button id="vI" onclick="setView('stock')">재고</button></div>
+  <button class="right" onclick="exportCSV()">⬇ CSV 내보내기</button>
+</div>
+
+<div class="cnt" id="cnt"></div>
+<div class="tblwrap"><table id="tb"><thead></thead><tbody></tbody></table></div>
+
+<div class="legend" id="legend"></div>
+</div>
+
+<div id="dim" onclick="if(event.target===this)closeP()">
+  <div id="pop"><div class="hd"><span id="pt"></span><span class="x" onclick="closeP()">✕</span></div><div class="bd" id="pb"></div></div>
+</div>
+
+<script>
+let D=null, view='sales', _rows=[];
+const $=id=>document.getElementById(id);
+const fmt=n=>(n==null||n==='')?'':Number(n).toLocaleString('ko-KR');
+const sum=a=>a.reduce((x,y)=>x+(y||0),0);
+const md=iso=>iso.slice(5,7).replace(/^0/,'')+'/'+iso.slice(8,10).replace(/^0/,'');
+
+async function load(){
+  try{
+    const r=await fetch('data/data.json?t='+Date.now(),{cache:'no-store'});
+    if(!r.ok) throw new Error(r.status);
+    D=await r.json();
+  }catch(e){
+    $('off').style.display='block'; $('off').textContent='데이터를 불러오지 못했습니다 ('+e.message+'). 네트워크를 확인하고 새로고침해 주세요.';
+    return;
+  }
+  const a=D.asof;
+  $('sub').innerHTML='데이터 기준 &nbsp;판매 <b>'+a.sales+'</b> · 재고 <b>'+(a.stock||'-')+'</b> · 생산계획 <b>'+a.prod+'</b> · 수입일정 <b>'+a.imp+'</b> &nbsp;·&nbsp; 빌드 '+D.built;
+  const ym=$('fYM'); ym.innerHTML=D.months.slice().reverse().map(m=>'<option>'+m+'</option>').join('');
+  ym.addEventListener('change',render);
+  opts(); render();
+  $('legend').innerHTML='<b>회전일</b> = 현재고 ÷ 최근 '+D.rules.avgDays+'일 일평균 판매 (15일 미만 빨강, 현재고 0 = 품절) &nbsp;·&nbsp; '
+   +'<b>재고 빨간 볼드</b> = 전일 대비 +'+D.rules.inflow+' 이상 입고 &nbsp;·&nbsp; <b>입고 [일정]</b> = 오늘 이후 생산계획·수입일정 있음 &nbsp;·&nbsp; '
+   +'판매 셀 클릭 → 채널·거래처 상세 &nbsp;·&nbsp; 표시 품목 = 상품코드집 ∪ 판매실적 중 최근 활동 있는 품목, 코드집 순서';
+}
+function fill(sel,vals,ph){const cur=sel.value;sel.innerHTML='<option value="">'+ph+'</option>'+vals.map(v=>'<option'+(v===cur?' selected':'')+'>'+v+'</option>').join('');}
+function opts(){
+  const L=$('fL').value,M=$('fM').value;
+  const u=a=>[...new Set(a.filter(Boolean))];
+  fill($('fL'),u(D.items.map(i=>i.cat[0])),'대유형 전체');
+  fill($('fM'),u(D.items.filter(i=>!L||i.cat[0]===L).map(i=>i.cat[1])),'중유형 전체');
+  fill($('fS'),u(D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)).map(i=>i.cat[2])),'소유형 전체');
+}
+['fL','fM','fS'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='fL')$('fM').value='';if(id!=='fS')$('fS').value='';opts();render();}));
+$('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')render()});
+function resetF(){['fL','fM','fS'].forEach(id=>$(id).value='');$('fQ').value='';opts();render();}
+function setView(v){view=v;$('vS').classList.toggle('on',v==='sales');$('vI').classList.toggle('on',v==='stock');render();}
+function filtered(){
+  const L=$('fL').value,M=$('fM').value,S=$('fS').value,Q=$('fQ').value.trim().toUpperCase();
+  return D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)&&(!S||i.cat[2]===S)&&(!Q||i.pn.toUpperCase().includes(Q)));
+}
+function hasFuture(it){return it.sup.some(x=>x[1]>=D.asof.today);}
+function visDays(ym){
+  // 그 달의 날짜 중 데이터 기준일까지만 (미래 열 제거)
+  const lim=view==='sales'?D.asof.sales:(D.asof.stock||D.asof.sales);
+  return D.days[ym].filter(d=>d<=lim);
+}
+function render(){
+  if(!D) return;
+  const ym=$('fYM').value||D.months[D.months.length-1];
+  const days=visDays(ym); const n=days.length;
+  const rows=filtered(); _rows=rows;
+  const th=$('tb').querySelector('thead'), tb=$('tb').querySelector('tbody');
+  let h='<tr><th class="dim stk c1">대유형</th><th class="dim stk c2">중유형</th><th class="dim stk c3">소유형</th><th class="dim stk c4">품명</th><th class="dim stk c5">입고</th>';
+  if(view==='sales') h+='<th title="'+D.asof.stock+' 재고">현재고</th><th title="현재고 ÷ '+D.rules.avgDays+'일 일평균 판매">회전일</th>';
+  for(let k=n-1;k>=0;k--) h+='<th>'+md(days[k])+'</th>';
+  if(view==='sales') h+='<th class="tot">월합계</th>';
+  th.innerHTML=h+'</tr>';
+  tb.innerHTML=rows.map((it,ri)=>{
+    let r='<td class="dim stk c1">'+it.cat[0]+'</td><td class="dim stk c2">'+it.cat[1]+'</td><td class="dim stk c3">'+it.cat[2]+'</td><td class="dim stk c4"><b>'+it.pn+'</b></td>'
+         +'<td class="dim stk c5">'+(hasFuture(it)?'<a onclick="popI('+ri+')">일정</a>':'')+'</td>';
+    if(view==='sales'){
+      const s=it.s[ym]||[]; const turn=it.avg>0?Math.round(it.cur/it.avg):null;
+      r+='<td class="cur">'+fmt(it.cur)+'</td>';
+      r+=it.cur===0?'<td class="turn zero">품절</td>':'<td class="turn'+(turn!=null&&turn<D.rules.lowTurn?' low':'')+'">'+(turn==null?'-':fmt(turn)+'일')+'</td>';
+      for(let k=n-1;k>=0;k--){const v=s[k]||0;r+='<td class="clk'+(v?'':' z')+'" onclick="popS('+ri+',\''+ym+'\','+(k+1)+')">'+fmt(v)+'</td>';}
+      r+='<td class="tot">'+fmt(sum(s.slice(0,n)))+'</td>';
+    }else{
+      const s=it.k[ym]||[]; const prev0=(it.k0&&it.k0[ym]!=null)?it.k0[ym]:null;
+      for(let k=n-1;k>=0;k--){
+        const v=s[k]; if(v==null){r+='<td class="na">·</td>';continue;}
+        let p=null; for(let j=k-1;j>=0;j--){if(s[j]!=null){p=s[j];break;}} if(p==null&&k===0)p=prev0;
+        const cls=v===0?'out':(p!=null&&v-p>=D.rules.inflow?'in':'');
+        r+='<td class="'+cls+'"'+(cls==='in'?' title="전일 대비 +'+fmt(v-p)+'"':'')+'>'+fmt(v)+'</td>';
+      }
+    }
+    return '<tr>'+r+'</tr>';
+  }).join('');
+  $('cnt').innerHTML='<span>품목 '+rows.length+'개</span><span>'+ym+' · '+(view==='sales'?'판매수량(일별)':'재고수량(일별)')+'</span>';
+}
+function popS(ri,ym,day){
+  const it=_rows[ri], det=(it.d[ym]||{})[String(day)]||[];
+  let b;
+  if(!det.length) b='<div class="empty">해당일 판매 없음</div>';
+  else{
+    b='<table><thead><tr><th class="l">분석채널</th><th class="l">거래처</th><th>수량</th></tr></thead><tbody>'
+     +det.map(x=>'<tr><td class="l">'+D.ch[x[0]]+'</td><td class="l">'+D.cu[x[1]]+'</td><td>'+fmt(x[2])+'</td></tr>').join('')
+     +'<tr class="sum"><td class="l">합계</td><td class="l"></td><td>'+fmt(sum(det.map(x=>x[2])))+'</td></tr></tbody></table>';
+  }
+  openP(it.pn+' · '+ym.replace('.','/')+'/'+day+' 판매 상세',b);
+}
+function popI(ri){
+  const it=_rows[ri], today=D.asof.today;
+  const rows=it.sup.map(x=>'<tr'+(x[1]<today?' class="past"':'')+'><td class="l"><span class="tag'+(x[0]==='수입'?' imp':'')+'">'+x[0]+'</span></td>'
+    +'<td class="l">'+x[1]+(x[3]==='ETA'?' <span style="color:#86868B">(ETA)</span>':'')+(x[1]<today?' <span style="font-size:11px">지남</span>':'')+'</td>'
+    +'<td>'+fmt(x[2])+'</td><td class="l" style="color:#86868B">'+(x[4]||'')+'</td></tr>').join('');
+  const fut=it.sup.filter(x=>x[1]>=today);
+  const b='<table><thead><tr><th class="l">구분</th><th class="l">일자</th><th>수량</th><th class="l">NO.</th></tr></thead><tbody>'+rows
+    +'<tr class="sum"><td class="l">오늘 이후 합계</td><td class="l"></td><td>'+fmt(sum(fut.map(x=>x[2])))+'</td><td></td></tr></tbody></table>'
+    +'<div class="ex">현재고 '+fmt(it.cur)+' · 일평균 판매 '+it.avg+' · 생산 = 일자별 자재계획(계획수량) · 수입 = 김포입고일 우선, 없으면 ETA</div>';
+  openP(it.pn+' · 수급 일정',b);
+}
+function openP(t,b){$('pt').textContent=t;$('pb').innerHTML=b;$('dim').style.display='flex';}
+function closeP(){$('dim').style.display='none';}
+document.addEventListener('keydown',e=>{if(e.key==='Escape')closeP()});
+function exportCSV(){
+  if(!D) return;
+  const ths=[...$('tb').querySelectorAll('thead th')].map(t=>t.textContent);
+  const lines=[ths.join(',')];
+  $('tb').querySelectorAll('tbody tr').forEach(tr=>{
+    lines.push([...tr.children].map(td=>{let v=td.textContent.replace(/,/g,'').replace(/·/g,'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(','));
+  });
+  const ym=$('fYM').value.replace('.',''); const name='판매재고_'+ym+'_'+(view==='sales'?'판매':'재고')+'.csv';
+  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+}
+if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
+load();
+</script>
+</body>
+</html>
