@@ -22,7 +22,10 @@ GitHub Pages  https://yim0790.github.io/stock-supply/
 3. `config.cmd` 확인 (GH_USER / GH_REPO=stock-supply / GH_MAIL) — 이미 채워져 있음
 4. `setup_github.bat` 더블클릭 (로그인 창 뜨면 로그인 후 한 번 더)
 5. 저장소 → Settings → Pages → Source: Deploy from a branch → Branch **main / (root)** → Save
-6. `make_shortcut.bat` 더블클릭 → 바탕화면에 **재고수급 업데이트**, `직원배포용\판매재고수급 현황.url` 생성
+6. `make_shortcut.bat` 더블클릭 → **바탕화면에 아이콘 2개** 생성
+   - **재고수급 업데이트** (`.lnk` → update.bat 실행, 빨간 새로고침 아이콘)
+   - **판매재고수급 현황** (`.url` → 사이트 열기, 창고 아이콘)
+   - 추가로 `직원배포용\판매재고수급 현황.url` (직원에게 보낼 사본, 아이콘 없음)
 
 ## 매번 (약 1~2분)
 
@@ -52,6 +55,7 @@ GitHub Pages  https://yim0790.github.io/stock-supply/
 06_Stock-Supply/
 ├ build_data.py · index.html · data/data.json · sw.js · manifest.json · icons/
 ├ config.cmd · update.bat · setup_github.bat · make_shortcut.bat · make_shortcut.py
+├ icons/   PWA 아이콘 + update icon.ico(업데이트) · view icon.ico(조회)
 ├ cache/   재고 파일 파싱 캐시 + 수입 시트 마지막 성공본 (git 제외)
 ├ docs/    계획서 · 체크리스트 · 컨텍스트노트 (git 제외)
 └ 목업/    승인용 PC 목업 (git 제외)
