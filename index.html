@@ -12,7 +12,7 @@
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/static/pretendard.min.css">
 <style>
 /* applemood 토큰 + 표 헤더는 기준 블루 #465CE2 */
-:root{--ink:#1D1D1F;--g2:#6E6E73;--g3:#86868B;--bg:#FFFFFF;--pch:#F5F5F7;--hair:#E0E0E0;--blue:#0066CC;--red:#E30000;--th:#465CE2;--inner:#7F7F7F}
+:root{--ink:#1D1D1F;--g2:#6E6E73;--g3:#86868B;--bg:#FFFFFF;--pch:#F5F5F7;--hair:#E0E0E0;--blue:#0066CC;--red:#E30000;--th:#465CE2;--th2:#595959;--inner:#7F7F7F}
 *{box-sizing:border-box}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:Pretendard,'Apple SD Gothic Neo','Malgun Gothic',sans-serif;font-size:13px;font-weight:400;-webkit-font-smoothing:antialiased}
 .wrap{max-width:1600px;margin:0 auto;padding:30px 40px 50px}
@@ -58,6 +58,7 @@ td.z{color:#C7C7CC}
 td.na{color:#D6D6DB}
 .stk{position:sticky;background:#fff;z-index:2}
 th.stk{background:var(--th);z-index:4}   /* .stk 가 th 규칙보다 우선순위가 높아 헤더가 흰색이 되던 문제 */
+#tb.sv th,#tb.sv th.stk{background:var(--th2)}   /* 재고 VIEW 는 헤더를 진한 회색으로 */
 .c1,.c2,.c3,.c4,.c5{overflow:hidden;text-overflow:ellipsis}
 .c1{left:0;width:80px;min-width:80px;max-width:80px}
 .c2{left:80px;width:90px;min-width:90px;max-width:90px}
@@ -157,7 +158,7 @@ function opts(){
 ['fL','fM','fS'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='fL')$('fM').value='';if(id!=='fS')$('fS').value='';opts();render();}));
 $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')render()});
 function resetF(){['fL','fM','fS'].forEach(id=>$(id).value='');$('fQ').value='';opts();render();}
-function setView(v){view=v;$('vS').classList.toggle('on',v==='sales');$('vI').classList.toggle('on',v==='stock');render();}
+function setView(v){view=v;$('vS').classList.toggle('on',v==='sales');$('vI').classList.toggle('on',v==='stock');$('tb').classList.toggle('sv',v==='stock');render();}
 function filtered(){
   const L=$('fL').value,M=$('fM').value,S=$('fS').value,Q=$('fQ').value.trim().toUpperCase();
   return D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)&&(!S||i.cat[2]===S)&&(!Q||i.pn.toUpperCase().includes(Q)));
