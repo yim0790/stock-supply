@@ -290,13 +290,18 @@ def read_import(openpyxl, path):
     out = []; stat = collections.Counter(); cutoff = TODAY - datetime.timedelta(days=IMPORT_PAST_D)
     for r in rows[hi + 2:]:
         if not r: continue
-        a = norm(r[0])
+        v0 = r[0]
+        # 월 구분 행: xlsx 로 받으면 날짜값(2024-01-01), 화면·CSV 로 보면 '1월,2024년' 문자열이다
+        if isinstance(v0, (datetime.date, datetime.datetime)) and all(not norm(x) for x in r[1:]):
+            dd = v0.date() if isinstance(v0, datetime.datetime) else v0
+            month, year = dd.month, dd.year; cur = None; continue
+        a = norm(v0)
         mh = re.fullmatch(r"(\d{1,2})월\s*,\s*(\d{4})년", a)
         if mh:
             month, year = int(mh.group(1)), int(mh.group(2)); cur = None; continue
         if year is None: continue
         if a and c_no is not None:
-            no = a
+            no = re.sub(r"\.0$", "", a)
             eta = parse_date(r[c_eta], year, month) if c_eta is not None else None
             gp = parse_date(r[c_gp], year, month) if c_gp is not None else None
             cur = (no, eta, gp)
