@@ -59,16 +59,19 @@ td.na{color:#D6D6DB}
 .stk{position:sticky;background:#fff;z-index:2}
 th.stk{background:var(--th);z-index:4}   /* .stk 가 th 규칙보다 우선순위가 높아 헤더가 흰색이 되던 문제 */
 #tb.sv th,#tb.sv th.stk{background:var(--th2)}   /* 재고 VIEW 는 헤더를 진한 회색으로 */
-.c1,.c2,.c3,.c4,.c5{overflow:hidden;text-overflow:ellipsis}
+.c1,.c2,.c3,.c4,.c5,.c6{overflow:hidden;text-overflow:ellipsis}
 .c1{left:0;width:80px;min-width:80px;max-width:80px}
 .c2{left:80px;width:90px;min-width:90px;max-width:90px}
 .c3{left:170px;width:130px;min-width:130px;max-width:130px}
 .c4{left:300px;width:160px;min-width:160px;max-width:160px}
-.c5{left:460px;width:56px;min-width:56px;max-width:56px;text-align:center!important}
-td.c5,th.c5{border-right:1.5px solid var(--ink)}
-td.c5 a{color:var(--blue);font-weight:600;cursor:pointer}
-td.c5 a:hover{text-decoration:underline}
+.c5{left:460px;width:86px;min-width:86px;max-width:86px}
+.c6{left:546px;width:56px;min-width:56px;max-width:56px;text-align:center!important}
+td.c6,th.c6{border-right:1.5px solid var(--ink)}
+td.c6 a{color:var(--blue);font-weight:600;cursor:pointer}
+td.c6 a:hover{text-decoration:underline}
 td.c4 b{font-weight:600}
+td.c5{color:var(--g2)}
+td.c5.eol{color:var(--red);font-weight:600}
 .legend{margin-top:12px;font-size:12px;color:var(--g3);line-height:1.8}
 .legend b{color:var(--ink);font-weight:600}
 /* 팝업 */
@@ -145,7 +148,9 @@ async function load(){
   opts(); render();
   $('legend').innerHTML='<b>회전일</b> = 현재고 ÷ 최근 '+D.rules.avgDays+'일 일평균 판매 (15일 미만 빨강, 현재고 0 = 품절) &nbsp;·&nbsp; '
    +'<b>재고 빨간 볼드</b> = 전일 대비 +'+D.rules.inflow+' 이상 입고 &nbsp;·&nbsp; <b>입고 [일정]</b> = 오늘 이후 생산계획·수입일정 있음 &nbsp;·&nbsp; '
-   +'판매 셀 클릭 → 채널·거래처 상세 &nbsp;·&nbsp; 표시 품목 = 상품코드집 ∪ 판매실적 중 최근 활동 있는 품목, 코드집 순서';
+   +'판매 셀 클릭 → 채널·거래처 상세<br>'
+   +'<b>표시 품목</b> = 상품코드집 ∪ 판매실적 중 최근 활동 있는 품목(코드집 순서). '
+   +'<b>운영</b>에 \'단종\'이 포함되고 현재고 '+D.rules.eolStock+'개 이하면 제외 — 단, 당월 판매가 있으면 유지';
 }
 function fill(sel,vals,ph){const cur=sel.value;sel.innerHTML='<option value="">'+ph+'</option>'+vals.map(v=>'<option'+(v===cur?' selected':'')+'>'+v+'</option>').join('');}
 function opts(){
@@ -175,14 +180,15 @@ function render(){
   const days=visDays(ym); const n=days.length;
   const rows=filtered(); _rows=rows;
   const th=$('tb').querySelector('thead'), tb=$('tb').querySelector('tbody');
-  let h='<tr><th class="dim stk c1">대유형</th><th class="dim stk c2">중유형</th><th class="dim stk c3">소유형</th><th class="dim stk c4">품명</th><th class="dim stk c5">입고</th>';
+  let h='<tr><th class="dim stk c1">대유형</th><th class="dim stk c2">중유형</th><th class="dim stk c3">소유형</th><th class="dim stk c4">품명</th><th class="dim stk c5" title="상품코드집 운영 상태">운영</th><th class="dim stk c6" title="수급일정(생산·수입) 있으면 일정">입고</th>';
   if(view==='sales') h+='<th title="'+D.asof.stock+' 재고">현재고</th><th title="현재고 ÷ '+D.rules.avgDays+'일 일평균 판매">회전일</th>';
   for(let k=n-1;k>=0;k--) h+='<th>'+md(days[k])+'</th>';
   if(view==='sales') h+='<th class="tot">월합계</th>';
   th.innerHTML=h+'</tr>';
   tb.innerHTML=rows.map((it,ri)=>{
     let r='<td class="dim stk c1">'+it.cat[0]+'</td><td class="dim stk c2">'+it.cat[1]+'</td><td class="dim stk c3">'+it.cat[2]+'</td><td class="dim stk c4"><b>'+it.pn+'</b></td>'
-         +'<td class="dim stk c5">'+(hasFuture(it)?'<a onclick="popI('+ri+')">일정</a>':'')+'</td>';
+         +'<td class="dim stk c5'+((it.op||'').indexOf('단종')>=0?' eol':'')+'">'+(it.op||'')+'</td>'
+         +'<td class="dim stk c6">'+(hasFuture(it)?'<a onclick="popI('+ri+')">일정</a>':'')+'</td>';
     if(view==='sales'){
       const s=it.s[ym]||[]; const turn=it.avg>0?Math.round(it.cur/it.avg):null;
       r+='<td class="cur">'+fmt(it.cur)+'</td>';

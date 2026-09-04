@@ -35,6 +35,8 @@ CACHE_DIR = os.path.join(HERE, "cache")
 MONTHS_BACK   = 12     # 판매 표시 기간(최신 실적월 포함)
 AVG_DAYS      = 90     # 회전일 계산용 일평균 판매 기간
 IMPORT_PAST_D = 31     # 수입 일정: 오늘 기준 며칠 전까지 포함
+EOL_KEYWORD   = "단종"   # 코드집 '운영' 값에 이 단어가 들어가면 단종 취급 (단종/단종(재고)/단종(PO)/단종(자재))
+EOL_STOCK_MAX = 50     # 단종이면서 현재고가 이 값 이하면 목록에서 숨김 (단, 당월 판매가 있으면 유지)
 SALES_SHEET   = "쿼리"
 PROD_SHEET    = "일자별_raw"
 CODE_SHEET    = "상품코드집"
@@ -83,22 +85,23 @@ def read_codebook(openpyxl):
     if not os.path.exists(CODEBOOK):
         raise SystemExit(f"[중단] 코드집이 없습니다: {CODEBOOK}")
     ws = openpyxl.load_workbook(CODEBOOK, read_only=True, data_only=True)[CODE_SHEET]
-    order, cat = {}, {}
+    order, cat, op = {}, {}, {}
     hdr = None
     for i, r in enumerate(ws.iter_rows(values_only=True)):
         if hdr is None:
-            if r and "코드" in r and "제품명" in r and "대유형" in r:
-                hdr = {n: r.index(n) for n in ("코드", "제품명", "대유형", "중유형", "소유형")}
+            if r and "코드" in r and "제품명" in r and "대유형" in r and "운영" in r:
+                hdr = {n: r.index(n) for n in ("코드", "제품명", "대유형", "중유형", "소유형", "운영")}
             continue
         code, name = norm(r[hdr["코드"]]), norm(r[hdr["제품명"]])
         if not code and not name: continue
         c = (norm(r[hdr["대유형"]]), norm(r[hdr["중유형"]]), norm(r[hdr["소유형"]]))
+        o = norm(r[hdr["운영"]])
         for k in (name, code):
             if k and k not in order:
-                order[k] = i; cat[k] = c
+                order[k] = i; cat[k] = c; op[k] = o
     if hdr is None:
-        raise SystemExit("[중단] 코드집 헤더(코드/제품명/대유형)를 찾지 못했습니다")
-    return order, cat
+        raise SystemExit("[중단] 코드집 헤더(코드/제품명/대유형/운영)를 찾지 못했습니다")
+    return order, cat, op
 
 
 # ── 2. 판매 ──────────────────────────────────────────────────────────
@@ -323,7 +326,7 @@ def build():
     openpyxl = ensure_openpyxl()
     print("=" * 64); print(f"stock-supply 데이터 빌드  {datetime.datetime.now():%Y-%m-%d %H:%M}"); print("=" * 64)
 
-    print("[1] 코드집");  order, cb_cat = read_codebook(openpyxl)
+    print("[1] 코드집");  order, cb_cat, cb_op = read_codebook(openpyxl)
     print(f"  코드집 키 {len(order):,}개")
     print("[2] 판매");    sales, s_cat, maxd = read_sales(openpyxl)
     months = months_back(ym_of(maxd), MONTHS_BACK)
@@ -373,7 +376,8 @@ def build():
     by_pn = collections.defaultdict(list)
     for (p, d, ch, cu), q in win_sales.items(): by_pn[p].append((d, ch, cu, q))
 
-    items = []; dropped_no_activity = 0
+    cur_ym = months[-1]          # 진행 중인 달 (당월)
+    items = []; dropped_no_activity = 0; dropped_eol = 0; eol_kept = []
     for pn in sorted(universe):
         det = {}; sm = {}; has_sale = False
         for ym in months:
@@ -396,9 +400,15 @@ def build():
         c = cur.get(pn, 0)
         if not has_sale and c == 0 and pn not in sup:
             dropped_no_activity += 1; continue          # 판매·재고·수급 모두 없는 품목 숨김
+        # 단종 + 현재고 소진 품목 숨김. 단, 당월 판매가 있으면 아직 팔리는 중이므로 남긴다
+        if EOL_KEYWORD in cb_op.get(pn, "") and c <= EOL_STOCK_MAX:
+            if sum(sm.get(cur_ym, [])) > 0:
+                eol_kept.append(pn)
+            else:
+                dropped_eol += 1; continue
         cat = s_cat.get(pn) or cb_cat.get(pn) or ("", "", "")
         items.append({
-            "pn": pn, "cat": list(cat), "ord": order.get(pn, 10 ** 6),
+            "pn": pn, "cat": list(cat), "op": cb_op.get(pn, ""), "ord": order.get(pn, 10 ** 6),
             "cur": c, "avg": round(avg[pn] / AVG_DAYS, 2),
             "s": {ym: sm[ym] for ym in months if any(sm[ym])},
             "d": det, "k": stk, "k0": k0, "sup": sup.get(pn, []),
@@ -410,36 +420,40 @@ def build():
         "asof": {"sales": maxd.isoformat(), "stock": latest_day.isoformat() if latest_day else None,
                  "prod": prod_name or "-", "imp": imp_src, "today": TODAY.isoformat()},
         "months": months, "days": days, "ch": ch_list, "cu": cu_list,
-        "rules": {"avgDays": AVG_DAYS, "inflow": 30, "lowTurn": 15},
+        "rules": {"avgDays": AVG_DAYS, "inflow": 30, "lowTurn": 15, "eolStock": EOL_STOCK_MAX},
         "items": items,
     }
 
     # ── 검산 ──
     print("[6] 검산")
     ok = True
+    shown = {it["pn"] for it in items}
     tot_json = sum(sum(v) for it in items for v in it["s"].values())
-    tot_raw = sum(q for (p, d, ch, cu), q in win_sales.items() if p in universe)
-    tot_raw_all = sum(win_sales.values())
-    print(f"  판매 합계  JSON {tot_json:,} = RAW(우주 내) {tot_raw:,} : {'OK' if tot_json == tot_raw else 'NG'}"
-          + (f"  (우주 밖 품명 판매 {tot_raw_all - tot_raw:,} 제외)" if tot_raw_all != tot_raw else ""))
+    tot_raw = sum(q for (p, d, ch, cu), q in win_sales.items() if p in shown)
+    hidden = sum(win_sales.values()) - tot_raw
+    print(f"  판매 합계  JSON {tot_json:,} = RAW(표시 품목) {tot_raw:,} : {'OK' if tot_json == tot_raw else 'NG'}"
+          + (f"  (숨긴 품목 판매 {hidden:,} 제외)" if hidden else ""))
     ok &= tot_json == tot_raw
     if latest_day:
         js = sum(it["cur"] for it in items); rw = sum(cur.values())
-        shown = {it["pn"] for it in items}
         excl = sum(v for k, v in cur.items() if k not in shown)
-        print(f"  재고 최신({latest_day}) JSON {js:,} + 제외품목 {excl:,} = 파일 {rw:,} : {'OK' if js + excl == rw else 'NG'}")
+        print(f"  재고 최신({latest_day}) JSON {js:,} + 숨긴품목 {excl:,} = 파일 {rw:,} : {'OK' if js + excl == rw else 'NG'}")
         ok &= js + excl == rw
-    pj = sum(x[2] for it in items for x in it["sup"] if x[0] == "생산"); pr = sum(q for m, d, q in prod if m in universe)
-    print(f"  생산(오늘 이후) JSON {pj:,} = 파일 {pr:,} : {'OK' if pj == pr else 'NG'}  (우주 밖 모델 {sum(q for m,d,q in prod if m not in universe):,})")
+    pj = sum(x[2] for it in items for x in it["sup"] if x[0] == "생산")
+    pr = sum(q for m, d, q in prod if m in shown)
+    print(f"  생산(오늘 이후) JSON {pj:,} = 파일(표시 품목) {pr:,} : {'OK' if pj == pr else 'NG'}"
+          f"  (표시 밖 모델 {sum(q for m, d, q in prod if m not in shown):,})")
     ok &= pj == pr
     ij = sum(1 for it in items for x in it["sup"] if x[0] == "수입")
     print(f"  수입 매칭 {ij}건 · 미매칭 MODEL {len(imp_unmatched)}종"
           + (": " + ", ".join(list(imp_unmatched)[:12]) if imp_unmatched else ""))
     for ym in months:
         a = sum(sum(it["s"].get(ym, [])) for it in items)
-        b = sum(q for (p, d, ch, cu), q in win_sales.items() if ym_of(d) == ym and p in universe)
+        b = sum(q for (p, d, ch, cu), q in win_sales.items() if ym_of(d) == ym and p in shown)
         if a != b: print(f"  [NG] {ym} 판매 {a:,} vs {b:,}"); ok = False
-    print(f"  품목 {len(items):,}개 표시 · 활동 없음 숨김 {dropped_no_activity:,} · 코드집 미등록(뒤에 정렬) {sum(1 for it in items if it['ord']>=10**6)}")
+    print(f"  단종 숨김 {dropped_eol:,}개 (운영에 '{EOL_KEYWORD}' 포함 + 현재고 {EOL_STOCK_MAX} 이하)"
+          + (f" · 당월({cur_ym}) 판매가 있어 유지 {len(eol_kept)}개: " + ", ".join(eol_kept[:10]) if eol_kept else ""))
+    print(f"  품목 {len(items):,}개 표시 · 활동 없음 숨김 {dropped_no_activity:,} · 코드집 미등록(뒤에 정렬) {sum(1 for it in items if it['ord'] >= 10 ** 6)}")
     if not ok:
         raise SystemExit("[중단] 검산 불일치 — data.json 을 만들지 않았습니다")
 
