@@ -60,6 +60,9 @@ td.na{color:#D6D6DB}
 th.stk{background:var(--th);z-index:4}   /* .stk 가 th 규칙보다 우선순위가 높아 헤더가 흰색이 되던 문제 */
 #tb.sv th,#tb.sv th.stk{background:var(--th2)}   /* 재고 VIEW 는 헤더를 진한 회색으로 */
 .c1,.c2,.c3,.c4,.c5,.c6,.c7{overflow:hidden;text-overflow:ellipsis}
+.c8{left:662px;width:74px;min-width:74px;max-width:74px}
+.c9{left:736px;width:66px;min-width:66px;max-width:66px}
+td.c9,th.c9{border-right:1.5px solid var(--ink)}          /* 판매뷰 틀고정 경계 = 회전일 뒤 */
 .c1{left:0;width:80px;min-width:80px;max-width:80px}
 .c2{left:80px;width:90px;min-width:90px;max-width:90px}
 .c3{left:170px;width:130px;min-width:130px;max-width:130px}
@@ -67,7 +70,7 @@ th.stk{background:var(--th);z-index:4}   /* .stk 가 th 규칙보다 우선순�
 .c5{left:460px;width:60px;min-width:60px;max-width:60px;text-align:center!important}
 .c6{left:520px;width:86px;min-width:86px;max-width:86px}
 .c7{left:606px;width:56px;min-width:56px;max-width:56px;text-align:center!important}
-td.c7,th.c7{border-right:1.5px solid var(--ink)}
+#tb.sv td.c7,#tb.sv th.c7{border-right:1.5px solid var(--ink)}   /* 재고뷰 틀고정 경계 = 입고 뒤 */
 td.c7 a{color:var(--blue);font-weight:600;cursor:pointer}
 td.c7 a:hover{text-decoration:underline}
 td.c4 b{font-weight:600}
@@ -205,7 +208,7 @@ function render(){
   const rows=filtered(); _rows=rows;
   const th=$('tb').querySelector('thead'), tb=$('tb').querySelector('tbody');
   let h='<tr><th class="dim stk c1">대유형</th><th class="dim stk c2">중유형</th><th class="dim stk c3">소유형</th><th class="dim stk c4">품명</th><th class="dim stk c5" title="상품코드집 상제품 (제품/상품)">제상품</th><th class="dim stk c6" title="상품코드집 운영 상태">운영</th><th class="dim stk c7" title="수급일정(생산·수입) 있으면 일정">입고</th>';
-  if(view==='sales') h+='<th title="'+D.asof.stock+' 재고">현재고</th><th title="현재고 ÷ '+D.rules.avgDays+'일 일평균 판매">회전일</th>';
+  if(view==='sales') h+='<th class="stk c8" title="'+D.asof.stock+' 재고">현재고</th><th class="stk c9" title="현재고 ÷ '+D.rules.avgDays+'일 일평균 판매">회전일</th>';
   for(let k=n-1;k>=0;k--) h+='<th>'+md(days[k])+'</th>';
   if(view==='sales') h+='<th class="tot">월합계</th>';
   th.innerHTML=h+'</tr>';
@@ -216,8 +219,8 @@ function render(){
          +'<td class="dim stk c7">'+(hasFuture(it)?'<a onclick="popI('+ri+')">일정</a>':'')+'</td>';
     if(view==='sales'){
       const s=it.s[ym]||[]; const turn=turnOf(it);
-      r+='<td class="cur">'+fmt(it.cur)+'</td>';
-      r+=it.cur===0?'<td class="turn zero">품절</td>':'<td class="turn'+(turn!=null&&turn<D.rules.lowTurn?' low':'')+'">'+(turn==null?'-':fmt(turn)+'일')+'</td>';
+      r+='<td class="cur stk c8">'+fmt(it.cur)+'</td>';
+      r+=it.cur===0?'<td class="turn zero stk c9">품절</td>':'<td class="turn stk c9'+(turn!=null&&turn<D.rules.lowTurn?' low':'')+'">'+(turn==null?'-':fmt(turn)+'일')+'</td>';
       for(let k=n-1;k>=0;k--){const v=s[k]||0;r+='<td class="clk'+(v?'':' z')+'" onclick="popS('+ri+',\''+ym+'\','+(k+1)+')">'+fmt(v)+'</td>';}
       r+='<td class="tot">'+fmt(sum(s.slice(0,n)))+'</td>';
     }else{
