@@ -18,12 +18,14 @@ if os.name == "nt":
     PROD_DIR  = os.path.join(ROOT, r"14)Notion", "01)제품생산계획 스페이스")
     STOCK_DIR = r"C:\★Jay\13.생산&재고\AA.재고_쿼리"
     CODEBOOK  = r"C:\★Jay\06.상품\▥상품코드집_운영.xlsx"
+    EXCLUDE   = os.path.join(HERE, "대시보드노출제외상품.xlsx")
 else:   # 개발용 샌드박스 마운트 경로
     M = "/sessions/peaceful-keen-cray/mnt"
     SALES     = f"{M}/01)실적dashboard/RAW_상품별유형별 실적_출력.xlsx"
     PROD_DIR  = f"{M}/01)제품생산계획 스페이스"
     STOCK_DIR = f"{M}/AA.재고_쿼리"
     CODEBOOK  = f"{M}/06.상품/▥상품코드집_운영.xlsx"
+    EXCLUDE   = os.path.join(HERE, "대시보드노출제외상품.xlsx")
 
 IMPORT_SHEET_ID  = "1P8lPE3Xx0RuwUCx1fuv19KYvrAy81f8eCRZwj46NHzI"      # 구글시트 '수입상품 입고일정'
 IMPORT_URL       = f"https://docs.google.com/spreadsheets/d/{IMPORT_SHEET_ID}/export?format=xlsx"
@@ -85,23 +87,41 @@ def read_codebook(openpyxl):
     if not os.path.exists(CODEBOOK):
         raise SystemExit(f"[중단] 코드집이 없습니다: {CODEBOOK}")
     ws = openpyxl.load_workbook(CODEBOOK, read_only=True, data_only=True)[CODE_SHEET]
-    order, cat, op = {}, {}, {}
+    order, cat, op, jp = {}, {}, {}, {}
     hdr = None
     for i, r in enumerate(ws.iter_rows(values_only=True)):
         if hdr is None:
-            if r and "코드" in r and "제품명" in r and "대유형" in r and "운영" in r:
-                hdr = {n: r.index(n) for n in ("코드", "제품명", "대유형", "중유형", "소유형", "운영")}
+            if r and "코드" in r and "제품명" in r and "대유형" in r and "운영" in r and "상제품" in r:
+                hdr = {n: r.index(n) for n in ("코드", "제품명", "대유형", "중유형", "소유형", "운영", "상제품")}
             continue
         code, name = norm(r[hdr["코드"]]), norm(r[hdr["제품명"]])
         if not code and not name: continue
         c = (norm(r[hdr["대유형"]]), norm(r[hdr["중유형"]]), norm(r[hdr["소유형"]]))
-        o = norm(r[hdr["운영"]])
+        o = norm(r[hdr["운영"]]); j = norm(r[hdr["상제품"]])
         for k in (name, code):
             if k and k not in order:
-                order[k] = i; cat[k] = c; op[k] = o
+                order[k] = i; cat[k] = c; op[k] = o; jp[k] = j
     if hdr is None:
-        raise SystemExit("[중단] 코드집 헤더(코드/제품명/대유형/운영)를 찾지 못했습니다")
-    return order, cat, op
+        raise SystemExit("[중단] 코드집 헤더(코드/제품명/대유형/운영/상제품)를 찾지 못했습니다")
+    return order, cat, op, jp
+
+
+def read_exclude(openpyxl):
+    """대시보드노출제외상품.xlsx 의 '제품명' 열에 적힌 품목은 화면에서 뺀다."""
+    if not os.path.exists(EXCLUDE):
+        print(f"  [주의] 제외 목록 파일이 없습니다: {EXCLUDE} — 제외 없이 진행")
+        return set()
+    wb = openpyxl.load_workbook(EXCLUDE, read_only=True, data_only=True)
+    out = set()
+    for ws in wb:
+        rows = list(ws.iter_rows(values_only=True))
+        hi = next((i for i, r in enumerate(rows) if r and "제품명" in [norm(x) for x in r]), None)
+        if hi is None: continue
+        ci = [norm(x) for x in rows[hi]].index("제품명")
+        for r in rows[hi + 1:]:
+            if r and len(r) > ci and norm(r[ci]): out.add(norm(r[ci]))
+    print(f"  노출 제외 목록 {len(out)}개")
+    return out
 
 
 # ── 2. 판매 ──────────────────────────────────────────────────────────
@@ -326,8 +346,9 @@ def build():
     openpyxl = ensure_openpyxl()
     print("=" * 64); print(f"stock-supply 데이터 빌드  {datetime.datetime.now():%Y-%m-%d %H:%M}"); print("=" * 64)
 
-    print("[1] 코드집");  order, cb_cat, cb_op = read_codebook(openpyxl)
-    print(f"  코드집 키 {len(order):,}개")
+    print("[1] 코드집");  order, cb_cat, cb_op, cb_jp = read_codebook(openpyxl)
+    print(f"  코드집 키 {len(order):,}개 · 상제품 {sum(1 for v in cb_jp.values() if v):,}개")
+    excl_list = read_exclude(openpyxl)
     print("[2] 판매");    sales, s_cat, maxd = read_sales(openpyxl)
     months = months_back(ym_of(maxd), MONTHS_BACK)
     start = month_days(months[0])[0]
@@ -377,8 +398,10 @@ def build():
     for (p, d, ch, cu), q in win_sales.items(): by_pn[p].append((d, ch, cu, q))
 
     cur_ym = months[-1]          # 진행 중인 달 (당월)
-    items = []; dropped_no_activity = 0; dropped_eol = 0; eol_kept = []
+    items = []; dropped_no_activity = 0; dropped_eol = 0; eol_kept = []; dropped_excl = 0
     for pn in sorted(universe):
+        if pn in excl_list:
+            dropped_excl += 1; continue          # 노출 제외 목록
         det = {}; sm = {}; has_sale = False
         for ym in months:
             sm[ym] = [0] * len(days[ym])
@@ -408,7 +431,7 @@ def build():
                 dropped_eol += 1; continue
         cat = s_cat.get(pn) or cb_cat.get(pn) or ("", "", "")
         items.append({
-            "pn": pn, "cat": list(cat), "op": cb_op.get(pn, ""), "ord": order.get(pn, 10 ** 6),
+            "pn": pn, "cat": list(cat), "jp": cb_jp.get(pn, ""), "op": cb_op.get(pn, ""), "ord": order.get(pn, 10 ** 6),
             "cur": c, "avg": round(avg[pn] / AVG_DAYS, 2),
             "s": {ym: sm[ym] for ym in months if any(sm[ym])},
             "d": det, "k": stk, "k0": k0, "sup": sup.get(pn, []),
@@ -453,6 +476,7 @@ def build():
         if a != b: print(f"  [NG] {ym} 판매 {a:,} vs {b:,}"); ok = False
     print(f"  단종 숨김 {dropped_eol:,}개 (운영에 '{EOL_KEYWORD}' 포함 + 현재고 {EOL_STOCK_MAX} 이하)"
           + (f" · 당월({cur_ym}) 판매가 있어 유지 {len(eol_kept)}개: " + ", ".join(eol_kept[:10]) if eol_kept else ""))
+    print(f"  노출 제외 목록으로 숨김 {dropped_excl:,}개")
     print(f"  품목 {len(items):,}개 표시 · 활동 없음 숨김 {dropped_no_activity:,} · 코드집 미등록(뒤에 정렬) {sum(1 for it in items if it['ord'] >= 10 ** 6)}")
     if not ok:
         raise SystemExit("[중단] 검산 불일치 — data.json 을 만들지 않았습니다")
