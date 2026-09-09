@@ -127,6 +127,8 @@ td.c6.eol{color:var(--red);font-weight:600}
     <option value="60-">60일 이상</option>
     <option value="none">산출 불가 (판매 없음)</option>
   </select>
+  <span class="lb" style="margin-left:14px">제상품</span>
+  <select id="fJ" title="상품코드집 상제품"><option value="">전체</option></select>
   <button class="right" onclick="exportCSV()">⬇ CSV 내보내기</button>
 </div>
 
@@ -161,6 +163,7 @@ async function load(){
   const ym=$('fYM'); ym.innerHTML=D.months.slice().reverse().map(m=>'<option>'+m+'</option>').join('');
   ym.addEventListener('change',render);
   $('fT').addEventListener('change',render);
+  $('fJ').addEventListener('change',render);
   opts(); render();
   $('legend').innerHTML='<b>회전일</b> = 현재고 ÷ 최근 '+D.rules.avgDays+'일 일평균 판매 (15일 미만 빨강, 현재고 0 = 품절) &nbsp;·&nbsp; '
    +'<b>재고 빨간 볼드</b> = 전일 대비 +'+D.rules.inflow+' 이상 입고 &nbsp;·&nbsp; <b>입고 [일정]</b> = 오늘 이후 생산계획·수입일정 있음 &nbsp;·&nbsp; '
@@ -176,10 +179,11 @@ function opts(){
   fill($('fL'),u(D.items.map(i=>i.cat[0])),'대유형 전체');
   fill($('fM'),u(D.items.filter(i=>!L||i.cat[0]===L).map(i=>i.cat[1])),'중유형 전체');
   fill($('fS'),u(D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)).map(i=>i.cat[2])),'소유형 전체');
+  fill($('fJ'),u(D.items.map(i=>i.jp)).sort(),'전체');
 }
 ['fL','fM','fS'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='fL')$('fM').value='';if(id!=='fS')$('fS').value='';opts();render();}));
 $('fQ').addEventListener('keydown',e=>{if(e.key==='Enter')render()});
-function resetF(){['fL','fM','fS','fT'].forEach(id=>$(id).value='');$('fQ').value='';opts();render();}
+function resetF(){['fL','fM','fS','fT','fJ'].forEach(id=>$(id).value='');$('fQ').value='';opts();render();}
 function setView(v){view=v;$('vS').classList.toggle('on',v==='sales');$('vI').classList.toggle('on',v==='stock');$('tb').classList.toggle('sv',v==='stock');render();}
 function turnOf(it){ return it.avg>0?Math.round(it.cur/it.avg):null; }   // 회전일 = 현재고 ÷ 일평균 판매
 function turnHit(it,f){
@@ -192,8 +196,8 @@ function turnHit(it,f){
   return t>=Number(a) && (b===''||t<Number(b));
 }
 function filtered(){
-  const L=$('fL').value,M=$('fM').value,S=$('fS').value,Q=$('fQ').value.trim().toUpperCase(),T=$('fT').value;
-  return D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)&&(!S||i.cat[2]===S)&&(!Q||i.pn.toUpperCase().includes(Q))&&turnHit(i,T));
+  const L=$('fL').value,M=$('fM').value,S=$('fS').value,Q=$('fQ').value.trim().toUpperCase(),T=$('fT').value,J=$('fJ').value;
+  return D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)&&(!S||i.cat[2]===S)&&(!Q||i.pn.toUpperCase().includes(Q))&&turnHit(i,T)&&(!J||(i.jp||'')===J));
 }
 function hasFuture(it){return it.sup.some(x=>x[1]>=D.asof.today);}
 function visDays(ym){
