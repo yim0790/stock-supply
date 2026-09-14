@@ -129,7 +129,7 @@ td.c6.eol{color:var(--red);font-weight:600}
   </select>
   <span class="lb" style="margin-left:14px">제상품</span>
   <select id="fJ" title="상품코드집 상제품"><option value="">전체</option></select>
-  <button class="right" onclick="exportCSV()">⬇ CSV 내보내기</button>
+  <button class="right" onclick="exportXlsx()">⬇ 엑셀 내보내기</button>
 </div>
 
 <div class="cnt" id="cnt"></div>
@@ -265,15 +265,76 @@ function popI(ri){
 function openP(t,b){$('pt').textContent=t;$('pb').innerHTML=b;$('dim').style.display='flex';}
 function closeP(){$('dim').style.display='none';}
 document.addEventListener('keydown',e=>{if(e.key==='Escape')closeP()});
-function exportCSV(){
-  if(!D) return;
-  const ths=[...$('tb').querySelectorAll('thead th')].map(t=>t.textContent);
-  const lines=[ths.join(',')];
-  $('tb').querySelectorAll('tbody tr').forEach(tr=>{
-    lines.push([...tr.children].map(td=>{let v=td.textContent.replace(/,/g,'').replace(/·/g,'');return /[",\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;}).join(','));
+/* ── 엑셀(xlsx) 내보내기 ─────────────────────────────────────────────
+   시트 2개(본표 + 수급상세)가 필요해 CSV 로는 안 되고, 외부 라이브러리 없이(오프라인 유지)
+   xlsx = ZIP(무압축 store) + XML 이라는 구조를 직접 만든다. */
+const _crcT=(()=>{const t=new Uint32Array(256);for(let n=0;n<256;n++){let c=n;for(let k=0;k<8;k++)c=c&1?0xEDB88320^(c>>>1):c>>>1;t[n]=c>>>0;}return t;})();
+function crc32(u8){let c=0xFFFFFFFF;for(let i=0;i<u8.length;i++)c=_crcT[(c^u8[i])&0xFF]^(c>>>8);return (c^0xFFFFFFFF)>>>0;}
+function zipStore(files){   // [{name, data:Uint8Array}] → Uint8Array (method 0)
+  const enc=new TextEncoder(); const parts=[], central=[]; let off=0;
+  const u16=v=>[v&255,(v>>8)&255], u32=v=>[v&255,(v>>8)&255,(v>>16)&255,(v>>24)&255];
+  for(const f of files){
+    const nm=enc.encode(f.name), crc=crc32(f.data), n=f.data.length;
+    const lh=[...u32(0x04034b50),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(n),...u32(n),...u16(nm.length),...u16(0)];
+    parts.push(new Uint8Array(lh),nm,f.data);
+    central.push([...u32(0x02014b50),...u16(20),...u16(20),...u16(0),...u16(0),...u16(0),...u16(0),...u32(crc),...u32(n),...u32(n),...u16(nm.length),...u16(0),...u16(0),...u16(0),...u16(0),...u32(0),...u32(off)],nm);
+    off+=lh.length+nm.length+n;
+  }
+  const cd=[]; let cdLen=0;
+  for(let i=0;i<central.length;i+=2){const a=new Uint8Array(central[i]);cd.push(a,central[i+1]);cdLen+=a.length+central[i+1].length;}
+  const cnt=files.length;
+  const end=new Uint8Array([...u32(0x06054b50),...u16(0),...u16(0),...u16(cnt),...u16(cnt),...u32(cdLen),...u32(off),...u16(0)]);
+  const all=[...parts,...cd,end]; const total=all.reduce((s,a)=>s+a.length,0);
+  const out=new Uint8Array(total); let p=0; for(const a of all){out.set(a,p);p+=a.length;}
+  return out;
+}
+const xesc=s=>String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F]/g,'');
+function colRef(i){let s='';i++;while(i>0){const m=(i-1)%26;s=String.fromCharCode(65+m)+s;i=(i-m-1)/26;}return s;}
+function sheetXml(rows){   // rows: 값 배열의 배열. 숫자는 숫자셀, 나머지는 문자셀
+  let x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>';
+  rows.forEach((r,ri)=>{
+    x+='<row r="'+(ri+1)+'">';
+    r.forEach((v,ci)=>{
+      if(v===null||v===undefined||v==='') return;
+      const ref=colRef(ci)+(ri+1);
+      if(typeof v==='number'&&isFinite(v)) x+='<c r="'+ref+'"><v>'+v+'</v></c>';
+      else x+='<c r="'+ref+'" t="inlineStr"><is><t xml:space="preserve">'+xesc(v)+'</t></is></c>';
+    });
+    x+='</row>';
   });
-  const ym=$('fYM').value.replace('.',''); const name='판매재고_'+ym+'_'+(view==='sales'?'판매':'재고')+'.csv';
-  const blob=new Blob(['﻿'+lines.join('\r\n')],{type:'text/csv;charset=utf-8'});
+  return x+'</sheetData></worksheet>';
+}
+function makeXlsx(sheets){   // [{name, rows}]
+  const enc=new TextEncoder(), f=[];
+  const ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+    +'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/>'
+    +'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+    +sheets.map((s,i)=>'<Override PartName="/xl/worksheets/sheet'+(i+1)+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>').join('')+'</Types>';
+  f.push({name:'[Content_Types].xml',data:enc.encode(ct)});
+  f.push({name:'_rels/.rels',data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')});
+  f.push({name:'xl/workbook.xml',data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+    +sheets.map((s,i)=>'<sheet name="'+xesc(s.name)+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>').join('')+'</sheets></workbook>')});
+  f.push({name:'xl/_rels/workbook.xml.rels',data:enc.encode('<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+    +sheets.map((s,i)=>'<Relationship Id="rId'+(i+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+(i+1)+'.xml"/>').join('')+'</Relationships>')});
+  sheets.forEach((s,i)=>f.push({name:'xl/worksheets/sheet'+(i+1)+'.xml',data:enc.encode(sheetXml(s.rows))}));
+  return zipStore(f);
+}
+function exportXlsx(){
+  if(!D) return;
+  const num=s=>{if(s==='·')return '';const v=s.replace(/,/g,'');return (v!==''&&/^-?\d+(\.\d+)?$/.test(v))?Number(v):s;};
+  // 시트1 — 화면에 보이는 표 그대로 (입고 열은 '일정' 텍스트)
+  const ths=[...$('tb').querySelectorAll('thead th')].map(t=>t.textContent);
+  const s1=[ths];
+  $('tb').querySelectorAll('tbody tr').forEach(tr=>s1.push([...tr.children].map(td=>num(td.textContent.trim()))));
+  // 시트2 — 화면에 남은 품목들의 수급 일정 상세 (팝업과 같은 내용)
+  const today=D.asof.today;
+  const s2=[['품명','제상품','구분','일자','일자기준','수량','NO.','상태','현재고','일평균 판매']];
+  _rows.forEach(it=>(it.sup||[]).forEach(x=>s2.push([it.pn,it.jp||'',x[0],x[1],x[3]||'',x[2],x[4]||'',x[1]<today?'지남':'예정',it.cur,it.avg])));
+  if(s2.length===1) s2.push(['(해당 품목의 수급 일정 없음)']);
+  const ym=$('fYM').value.replace('.','');
+  const name='판매재고수급_'+ym+'_'+(view==='sales'?'판매':'재고')+'.xlsx';
+  const blob=new Blob([makeXlsx([{name:view==='sales'?'판매':'재고',rows:s1},{name:'수급상세',rows:s2}])],
+                      {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
   const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download=name; a.click(); setTimeout(()=>URL.revokeObjectURL(a.href),1000);
 }
 if('serviceWorker' in navigator){window.addEventListener('load',()=>navigator.serviceWorker.register('sw.js').catch(()=>{}));}
