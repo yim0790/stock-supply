@@ -13,7 +13,7 @@ import sys, os, re, io, json, glob, datetime, collections, urllib.request
 # ── 경로 설정 ─────────────────────────────────────────────────────────
 HERE = os.path.dirname(os.path.abspath(__file__))
 if os.name == "nt":
-    ROOT      = r"C:\Users\UNIX117\♥Claude"
+    ROOT      = r"C:\Users\UNIX117\ClaudeYim"
     SALES     = os.path.join(ROOT, r"01)실적dashboard", "RAW_상품별유형별 실적_출력.xlsx")
     PROD_DIR  = os.path.join(ROOT, r"14)Notion", "01)제품생산계획 스페이스")
     STOCK_DIR = r"C:\★Jay\13.생산&재고\AA.재고_쿼리"
