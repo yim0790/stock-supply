@@ -19,12 +19,23 @@ if os.name == "nt":
     STOCK_DIR = r"C:\★Jay\13.생산&재고\AA.재고_쿼리"
     CODEBOOK  = r"C:\★Jay\06.상품\▥상품코드집_운영.xlsx"
     EXCLUDE   = os.path.join(HERE, "대시보드노출제외상품.xlsx")
-else:   # 개발용 샌드박스 마운트 경로
-    M = "/sessions/peaceful-keen-cray/mnt"
-    SALES     = f"{M}/01)실적dashboard/RAW_상품별유형별 실적_출력.xlsx"
-    PROD_DIR  = f"{M}/01)제품생산계획 스페이스"
-    STOCK_DIR = f"{M}/AA.재고_쿼리"
-    CODEBOOK  = f"{M}/06.상품/▥상품코드집_운영.xlsx"
+else:   # 개발용 샌드박스. 마운트 폴더 이름은 세션마다 달라지므로(접두어가 붙는다) 꼬리말로 찾는다
+    MNT = os.path.dirname(HERE)
+
+    def _find(tail, what):
+        """마운트 폴더 중 이름이 tail 로 끝나는 것을 찾는다.
+        연결이 끊긴 옛 폴더가 빈 껍데기로 남아 있으므로 내용이 있는 쪽을 고른다."""
+        hits = [os.path.join(MNT, d) for d in sorted(os.listdir(MNT)) if d.endswith(tail)]
+        live = [h for h in hits if os.path.isdir(h) and os.listdir(h)]
+        if not live:
+            raise SystemExit(f"[중단] 샌드박스에서 {what} 폴더를 못 찾았습니다 (…{tail}).\n"
+                             f"       후보 {hits} · 연결된 폴더 {sorted(os.listdir(MNT))}")
+        return live[0]
+
+    SALES     = os.path.join(_find("01)실적dashboard", "실적"), "RAW_상품별유형별 실적_출력.xlsx")
+    PROD_DIR  = _find("01)제품생산계획 스페이스", "생산계획")
+    STOCK_DIR = _find("AA.재고_쿼리", "재고")
+    CODEBOOK  = os.path.join(_find("06.상품", "상품코드집"), "▥상품코드집_운영.xlsx")
     EXCLUDE   = os.path.join(HERE, "대시보드노출제외상품.xlsx")
 
 IMPORT_SHEET_ID  = "1P8lPE3Xx0RuwUCx1fuv19KYvrAy81f8eCRZwj46NHzI"      # 구글시트 '수입상품 입고일정'
