@@ -50,6 +50,7 @@ AVG_DAYS      = 90     # 회전일 계산용 일평균 판매 기간
 IMPORT_PAST_D = 31     # 수입 일정: 오늘 기준 며칠 전까지 포함
 EOL_KEYWORD   = "단종"   # 코드집 '운영' 값에 이 단어가 들어가면 단종 취급 (단종/단종(재고)/단종(PO)/단종(자재))
 EOL_STOCK_MAX = 50     # 단종이면서 현재고가 이 값 이하면 목록에서 숨김 (단, 당월 판매가 있으면 유지)
+PROD_STALE_D  = 7      # 생산계획 엑셀이 이 일수 이상 묵으면 경고 (엑셀은 자동 갱신이 아니라 수동 재생성임)
 SALES_SHEET   = "쿼리"
 PROD_SHEET    = "일자별_raw"
 CODE_SHEET    = "상품코드집"
@@ -247,8 +248,21 @@ def read_prod(openpyxl):
         q = int(r[ix["계획수량"]] or 0); total += q
         if d >= TODAY and q > 0:
             rows.append((norm(r[ix["모델"]]), d, q))
-    print(f"  생산계획 {os.path.basename(path)} · 오늘 이후 {len(rows)}건 (파일 전체 계획합 {total:,})")
-    return rows, os.path.basename(path)
+    name = os.path.basename(path)
+    print(f"  생산계획 {name} · 오늘 이후 {len(rows)}건 (파일 전체 계획합 {total:,})")
+    # 생산계획만 자동 갱신이 아니다. 파일명 날짜로 며칠 묵었는지 보고 오래됐으면 눈에 띄게 알린다.
+    m = re.search(r"_(\d{8})\.xlsx$", name)
+    if m:
+        made = datetime.date(int(m.group(1)[:4]), int(m.group(1)[4:6]), int(m.group(1)[6:]))
+        age = (TODAY - made).days
+        if age >= PROD_STALE_D:
+            print("  " + "!" * 66)
+            print(f"  [경고] 생산계획 엑셀이 {age}일 지났습니다 ({made} 생성).")
+            print("         이 엑셀은 자동 갱신되지 않습니다. 클론에게 '자재계획 엑셀 갱신해줘' 라고")
+            print("         요청해 Notion 에서 새로 뽑은 뒤 이 배치를 다시 돌리세요.")
+            print("         (바탕화면 '생산계획 업데이트' 는 달력 PWA 배포용이라 엑셀을 만들지 않습니다)")
+            print("  " + "!" * 66)
+    return rows, name
 
 
 # ── 5. 수입 일정 ─────────────────────────────────────────────────────
