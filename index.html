@@ -72,6 +72,7 @@ td.c9,th.c9{border-right:1.5px solid var(--ink)}          /* 판매뷰 틀고정
 .c7{left:606px;width:56px;min-width:56px;max-width:56px;text-align:center!important}
 #tb.sv td.c7,#tb.sv th.c7{border-right:1.5px solid var(--ink)}   /* 재고뷰 틀고정 경계 = 입고 뒤 */
 td.c7 a{color:var(--blue);font-weight:600;cursor:pointer}
+td.c7 a.pastonly{color:var(--g3);font-weight:400}   /* 지난 생산만 있는 품목 — 앞으로 들어올 게 없다는 뜻 */
 td.c7 a:hover{text-decoration:underline}
 td.c4 b{font-weight:600}
 td.c5{color:var(--g2)}
@@ -200,6 +201,11 @@ function filtered(){
   return D.items.filter(i=>(!L||i.cat[0]===L)&&(!M||i.cat[1]===M)&&(!S||i.cat[2]===S)&&(!Q||i.pn.toUpperCase().includes(Q))&&turnHit(i,T)&&(!J||(i.jp||'')===J));
 }
 function hasFuture(it){return it.sup.some(x=>x[1]>=D.asof.today);}
+// 지난 생산만 있는 품목도 '직전 생산 시점'을 보려면 링크가 필요하다. 미래 건과는 글자색으로 구분
+function supLink(it,ri){
+  if(!it.sup||!it.sup.length) return '';
+  return '<a class="'+(hasFuture(it)?'':'pastonly')+'" onclick="popI('+ri+')">일정</a>';
+}
 function visDays(ym){
   // 그 달의 날짜 중 데이터 기준일까지만 (미래 열 제거)
   const lim=view==='sales'?D.asof.sales:(D.asof.stock||D.asof.sales);
@@ -220,7 +226,7 @@ function render(){
     let r='<td class="dim stk c1">'+it.cat[0]+'</td><td class="dim stk c2">'+it.cat[1]+'</td><td class="dim stk c3">'+it.cat[2]+'</td><td class="dim stk c4"><b>'+it.pn+'</b></td>'
          +'<td class="dim stk c5">'+(it.jp||'')+'</td>'
          +'<td class="dim stk c6'+((it.op||'').indexOf('단종')>=0?' eol':'')+'">'+(it.op||'')+'</td>'
-         +'<td class="dim stk c7">'+(hasFuture(it)?'<a onclick="popI('+ri+')">일정</a>':'')+'</td>';
+         +'<td class="dim stk c7">'+supLink(it,ri)+'</td>';
     if(view==='sales'){
       const s=it.s[ym]||[]; const turn=turnOf(it);
       r+='<td class="cur stk c8">'+fmt(it.cur)+'</td>';
@@ -255,11 +261,11 @@ function popI(ri){
   const it=_rows[ri], today=D.asof.today;
   const rows=it.sup.map(x=>'<tr'+(x[1]<today?' class="past"':'')+'><td class="l"><span class="tag'+(x[0]==='수입'?' imp':'')+'">'+x[0]+'</span></td>'
     +'<td class="l">'+x[1]+(x[3]==='ETA'?' <span style="color:#86868B">(ETA)</span>':'')+(x[1]<today?' <span style="font-size:11px">지남</span>':'')+'</td>'
-    +'<td>'+fmt(x[2])+'</td><td class="l" style="color:#86868B">'+(x[4]||'')+'</td></tr>').join('');
+    +'<td>'+fmt(x[2])+'</td><td>'+(x.length>5?fmt(x[5]):'')+'</td><td class="l" style="color:#86868B">'+(x[4]||'')+'</td></tr>').join('');
   const fut=it.sup.filter(x=>x[1]>=today);
-  const b='<table><thead><tr><th class="l">구분</th><th class="l">일자</th><th>수량</th><th class="l">NO.</th></tr></thead><tbody>'+rows
-    +'<tr class="sum"><td class="l">오늘 이후 합계</td><td class="l"></td><td>'+fmt(sum(fut.map(x=>x[2])))+'</td><td></td></tr></tbody></table>'
-    +'<div class="ex">현재고 '+fmt(it.cur)+' · 일평균 판매 '+it.avg+' · 생산 = 일자별 자재계획(계획수량) · 수입 = 김포입고일 우선, 없으면 ETA</div>';
+  const b='<table><thead><tr><th class="l">구분</th><th class="l">일자</th><th>계획</th><th>실적</th><th class="l">NO.</th></tr></thead><tbody>'+rows
+    +'<tr class="sum"><td class="l">오늘 이후 합계</td><td class="l"></td><td>'+fmt(sum(fut.map(x=>x[2])))+'</td><td></td><td></td></tr></tbody></table>'
+    +'<div class="ex">현재고 '+fmt(it.cur)+' · 일평균 판매 '+it.avg+' · 생산 = 일자별 자재계획(계획수량, 지난 건은 실적 함께) · 수입 = 김포입고일 우선, 없으면 ETA</div>';
   openP(it.pn+' · 수급 일정',b);
 }
 function openP(t,b){$('pt').textContent=t;$('pb').innerHTML=b;$('dim').style.display='flex';}
@@ -328,8 +334,8 @@ function exportXlsx(){
   $('tb').querySelectorAll('tbody tr').forEach(tr=>s1.push([...tr.children].map(td=>num(td.textContent.trim()))));
   // 시트2 — 화면에 남은 품목들의 수급 일정 상세 (팝업과 같은 내용)
   const today=D.asof.today;
-  const s2=[['품명','제상품','구분','일자','일자기준','수량','NO.','상태','현재고','일평균 판매']];
-  _rows.forEach(it=>(it.sup||[]).forEach(x=>s2.push([it.pn,it.jp||'',x[0],x[1],x[3]||'',x[2],x[4]||'',x[1]<today?'지남':'예정',it.cur,it.avg])));
+  const s2=[['품명','제상품','구분','일자','일자기준','계획','실적','NO.','상태','현재고','일평균 판매']];
+  _rows.forEach(it=>(it.sup||[]).forEach(x=>s2.push([it.pn,it.jp||'',x[0],x[1],x[3]||'',x[2],x.length>5?x[5]:'',x[4]||'',x[1]<today?'지남':'예정',it.cur,it.avg])));
   if(s2.length===1) s2.push(['(해당 품목의 수급 일정 없음)']);
   const ym=$('fYM').value.replace('.','');
   const name='판매재고수급_'+ym+'_'+(view==='sales'?'판매':'재고')+'.xlsx';

@@ -51,6 +51,7 @@ IMPORT_PAST_D = 31     # 수입 일정: 오늘 기준 며칠 전까지 포함
 EOL_KEYWORD   = "단종"   # 코드집 '운영' 값에 이 단어가 들어가면 단종 취급 (단종/단종(재고)/단종(PO)/단종(자재))
 EOL_STOCK_MAX = 50     # 단종이면서 현재고가 이 값 이하면 목록에서 숨김 (단, 당월 판매가 있으면 유지)
 PROD_STALE_D  = 7      # 생산계획 엑셀이 이 일수 이상 묵으면 경고 (엑셀은 자동 갱신이 아니라 수동 재생성임)
+PROD_PAST_N   = 2      # 수급 팝업에 함께 보여줄 '지난 생산' 건수 (직전 생산 시점을 알기 위함)
 SALES_SHEET   = "쿼리"
 PROD_SHEET    = "일자별_raw"
 CODE_SHEET    = "상품코드집"
@@ -228,11 +229,13 @@ def read_stock(openpyxl, start):
 
 # ── 4. 생산계획 ──────────────────────────────────────────────────────
 def read_prod(openpyxl):
-    """가장 최신 일자별_자재계획_*.xlsx 의 일자별_raw → 오늘 이후 계획수량>0 행."""
+    """가장 최신 일자별_자재계획_*.xlsx 의 일자별_raw 를 읽는다.
+    반환: (오늘 이후 계획수량>0 행, 모델별 직전 생산 PROD_PAST_N건, 파일명)
+    지난 건은 '직전 생산 시점'을 알기 위한 것이라 계획수량이 0이어도 실적이 있으면 포함한다."""
     cands = [p for p in glob.glob(os.path.join(PROD_DIR, "일자별_자재계획_*.xlsx"))
              if not os.path.basename(p).startswith("~$")]
     if not cands:
-        print("  [주의] 생산계획 파일이 없습니다 — 생산 일정 없이 진행"); return [], None
+        print("  [주의] 생산계획 파일이 없습니다 — 생산 일정 없이 진행"); return [], [], None
     path = sorted(cands, key=os.path.getmtime)[-1]
     ws = openpyxl.load_workbook(path, read_only=True, data_only=True)[PROD_SHEET]
     it = ws.iter_rows(values_only=True)
@@ -240,16 +243,26 @@ def read_prod(openpyxl):
     for n in ("생산일자", "모델", "계획수량"):
         if n not in h: raise SystemExit(f"[중단] 생산계획 헤더에 '{n}' 없음: {h}")
     ix = {n: h.index(n) for n in ("생산일자", "모델", "계획수량")}
-    rows = []; total = 0
+    i_act = h.index("생산수량") if "생산수량" in h else None
+    rows = []; total = 0; past = collections.defaultdict(list)
     for r in it:
         d = r[ix["생산일자"]]
         if isinstance(d, datetime.datetime): d = d.date()
         if not isinstance(d, datetime.date): continue
         q = int(r[ix["계획수량"]] or 0); total += q
-        if d >= TODAY and q > 0:
-            rows.append((norm(r[ix["모델"]]), d, q))
+        m = norm(r[ix["모델"]])
+        a = int(r[i_act] or 0) if i_act is not None and i_act < len(r) else 0
+        if d >= TODAY:
+            if q > 0: rows.append((m, d, q))
+        elif q > 0 or a > 0:
+            past[m].append((d, q, a))
+    past_rows = []
+    for m, v in past.items():
+        for d, q, a in sorted(v)[-PROD_PAST_N:]:      # 날짜순 뒤에서 N건 = 가장 최근
+            past_rows.append((m, d, q, a))
     name = os.path.basename(path)
-    print(f"  생산계획 {name} · 오늘 이후 {len(rows)}건 (파일 전체 계획합 {total:,})")
+    print(f"  생산계획 {name} · 오늘 이후 {len(rows)}건 · 지난 생산 {len(past_rows)}건"
+          f"(모델 {len(past)}종 × 최대 {PROD_PAST_N}) (파일 전체 계획합 {total:,})")
     # 생산계획만 자동 갱신이 아니다. 파일명 날짜로 며칠 묵었는지 보고 오래됐으면 눈에 띄게 알린다.
     m = re.search(r"_(\d{8})\.xlsx$", name)
     if m:
@@ -262,7 +275,7 @@ def read_prod(openpyxl):
             print("         요청해 Notion 에서 새로 뽑은 뒤 이 배치를 다시 돌리세요.")
             print("         (바탕화면 '생산계획 업데이트' 는 달력 PWA 배포용이라 엑셀을 만들지 않습니다)")
             print("  " + "!" * 66)
-    return rows, name
+    return rows, past_rows, name
 
 
 # ── 5. 수입 일정 ─────────────────────────────────────────────────────
@@ -379,7 +392,7 @@ def build():
     start = month_days(months[0])[0]
     print(f"  표시 기간 {months[0]} ~ {months[-1]}")
     print("[3] 재고");    stock = read_stock(openpyxl, start - datetime.timedelta(days=7))
-    print("[4] 생산계획"); prod, prod_name = read_prod(openpyxl)
+    print("[4] 생산계획"); prod, prod_past, prod_name = read_prod(openpyxl)
     print("[5] 수입 일정")
     imp_path, imp_src = download_import()
     imp, imp_stat = read_import(openpyxl, imp_path)
@@ -395,6 +408,8 @@ def build():
     # 수급: 품명별
     sup = collections.defaultdict(list)
     for m, d, q in prod: sup[m].append(["생산", d.isoformat(), q, ""])
+    # 지난 생산: 6번째 칸에 실적(생산수량). 미래 건은 이 칸이 없어 화면에서 빈칸으로 나온다
+    for m, d, q, a in prod_past: sup[m].append(["생산", d.isoformat(), q, "", "", a])
     imp_unmatched = collections.Counter()
     for m, d, q, basis, no in imp:
         if m in universe: sup[m].append(["수입", d.isoformat(), q, basis, no])
@@ -487,11 +502,17 @@ def build():
         excl = sum(v for k, v in cur.items() if k not in shown)
         print(f"  재고 최신({latest_day}) JSON {js:,} + 숨긴품목 {excl:,} = 파일 {rw:,} : {'OK' if js + excl == rw else 'NG'}")
         ok &= js + excl == rw
-    pj = sum(x[2] for it in items for x in it["sup"] if x[0] == "생산")
+    t_iso = TODAY.isoformat()
+    pj = sum(x[2] for it in items for x in it["sup"] if x[0] == "생산" and x[1] >= t_iso)
     pr = sum(q for m, d, q in prod if m in shown)
     print(f"  생산(오늘 이후) JSON {pj:,} = 파일(표시 품목) {pr:,} : {'OK' if pj == pr else 'NG'}"
           f"  (표시 밖 모델 {sum(q for m, d, q in prod if m not in shown):,})")
     ok &= pj == pr
+    gj = sum(x[5] for it in items for x in it["sup"] if x[0] == "생산" and x[1] < t_iso)
+    gr = sum(a for m, d, q, a in prod_past if m in shown)
+    print(f"  지난 생산 실적 JSON {gj:,} = 파일(표시 품목) {gr:,} : {'OK' if gj == gr else 'NG'}"
+          f"  (모델당 최대 {PROD_PAST_N}건)")
+    ok &= gj == gr
     ij = sum(1 for it in items for x in it["sup"] if x[0] == "수입")
     print(f"  수입 매칭 {ij}건 · 미매칭 MODEL {len(imp_unmatched)}종"
           + (": " + ", ".join(list(imp_unmatched)[:12]) if imp_unmatched else ""))
