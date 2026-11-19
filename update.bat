@@ -4,11 +4,20 @@ set "PYTHONIOENCODING=utf-8"
 cd /d "%~dp0"
 call config.cmd
 call :main > update_log.txt 2>&1
+set "RC=%ERRORLEVEL%"
 type update_log.txt
 echo.
 echo (log saved to update_log.txt)
-pause
-exit /b
+if not "%RC%"=="0" (
+    echo.
+    echo *** FAILED - read the message above. Press any key to close ***
+    pause >nul
+    exit /b %RC%
+)
+echo.
+echo Closing in 5 seconds...
+timeout /t 5 >nul
+exit /b 0
 
 :main
 echo ===== RUN %date% %time% =====
